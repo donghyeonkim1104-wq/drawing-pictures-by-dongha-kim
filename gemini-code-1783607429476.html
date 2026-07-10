@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 마법 벡터 드로잉 스튜디오 Pro Ultra v5.7</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght=400;600;700;800&display=swap');
+        body { font-family: 'Pretendard', sans-serif; background-color: #0f172a; color: #f1f5f9; }
+        canvas { touch-action: none; image-rendering: pixelated; }
+        .scan-line {
+            position: absolute; width: 100%; height: 4px;
+            background: linear-gradient(to bottom, rgba(168, 85, 247, 0), rgba(168, 85, 247, 0.8), rgba(168, 85, 247, 0));
+            box-shadow: 0 0 15px #a855f7; animation: scan 1.2s linear infinite; display: none; z-index: 10;
+        }
+        @keyframes scan { 0% { top: 0%; } 50% { top: 100%; } 100% { top: 0%; } }
+        .scrollbar-none::-webkit-scrollbar { display: none; }
+        .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+        .floating-panel {
+            position: fixed; z-index: 40; background-color: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(12px); border: 2px solid #475569; border-radius: 1rem;
+            box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.7);
+        }
+        .panel-header { cursor: move; user-select: none; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col p-3 overflow-hidden select-none">
+
+    <!-- 🎨 부위별 채색 모달 -->
+    <div id="color-picker-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-800 border-2 border-slate-700 p-6 rounded-2xl max-w-md w-full shadow-2xl text-center">
+            <h3 class="text-lg font-extrabold text-white mb-2">🎨 <span id="modal-part-name" class="text-purple-400">부위</span> 채색하기</h3>
+            <div id="modal-color-grid" class="grid grid-cols-5 gap-3 max-h-[220px] overflow-y-auto p-2.5 bg-slate-900 rounded-xl mb-5 scrollbar-none"></div>
+            <button onclick="closeColorModal()" class="w-full py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-xl text-xs font-bold transition">취소하기</button>
+        </div>
+    </div>
+
+    <!-- 🤖 AI 커스텀 파츠 추가 패널 -->
+    <div id="custom-part-modal" class="hidden floating-panel w-80 shadow-2xl overflow-hidden" style="top: 15%; right: 5%;">
+        <div class="panel-header bg-purple-900/50 p-3 border-b border-purple-500/40 flex items-center justify-between">
+            <span class="text-xs font-extrabold text-purple-300 flex items-center gap-1.5"><i class="fa-solid fa-wand-magic-sparkles"></i> AI 커스텀 파츠 설계</span>
+            <button onclick="closeCustomPartModal()" class="text-slate-400 hover:text-white text-xs px-1">✕</button>
+        </div>
+        <div class="p-4 flex flex-col gap-3">
+            <div>
+                <label class="block text-[10px] text-slate-400 mb-1">도형 구조 타입</label>
+                <select id="custom-shape-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl text-xs p-2 text-white">
+                    <option value="circle">🟢 원형 마법진 고리</option>
+                    <option value="rect">🟦 직사각형 메카 블록</option>
+                    <option value="triangle">🔺 피라미드 크리스탈</option>
+                    <option value="rhombus">💎 코어 다이아몬드</option>
+                    <option value="star">⭐ 헤일로 코어 스타</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[10px] text-slate-400 mb-1">파츠 레이어 명칭 기입</label>
+                <input type="text" id="custom-part-input-name" placeholder="예: 레이저 제너레이터" class="w-full bg-slate-900 border border-slate-700 rounded-xl text-xs p-2 text-white font-bold">
+            </div>
+            <button onclick="submitCustomPartAI()" class="w-full py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-xs font-bold shadow-md">도안에 정밀 융합</button>
+        </div>
+    </div>
+
+    <!-- 📐 기하학 정밀 변형 제어반 -->
+    <div id="transform-part-modal" class="hidden floating-panel w-80 shadow-2xl overflow-hidden" style="top: 20%; right: 20%;">
+        <div class="panel-header bg-cyan-900/50 p-3 border-b border-cyan-500/40 flex items-center justify-between">
+            <span class="text-xs font-extrabold text-cyan-300 flex items-center gap-1.5"><i class="fa-solid fa-gears"></i> 정밀 레이어 제어반</span>
+            <button onclick="closeTransformModal()" class="text-slate-400 hover:text-white text-xs px-1">✕</button>
+        </div>
+        <div class="p-4 max-h-[65vh] overflow-y-auto scrollbar-none flex flex-col gap-4">
+            <div class="text-[11px] font-bold text-amber-400 bg-slate-900/80 px-2.5 py-1.5 rounded-lg border border-slate-700">
+                선택 파츠: <span id="tf-part-name-display">-</span>
+            </div>
+
+            <label class="p-2 bg-slate-900 rounded-xl border border-slate-700 flex items-center justify-between cursor-pointer">
+                <span class="text-[11px] font-bold text-white">👁️ 단독 격리 모드</span>
+                <input type="checkbox" id="tf-hide-others" onchange="toggleHideOthers(this.checked)" class="w-4 h-4 accent-cyan-500">
+            </label>
+
+            <p id="tf-circle-warning" class="hidden text-rose-400 text-[10px] font-bold bg-rose-950/40 p-2 rounded-lg border border-rose-900/40">
+                ⚠️ 원형 파츠는 위치축 및 플립 대칭만 지원합니다.
+            </p>
+
+            <div>
+                <span class="block text-[11px] font-bold text-slate-300 mb-1.5"><i class="fa-solid fa-arrows-up-down-left-right text-blue-400 mr-1"></i> 1. 평행 위치 세밀 조정 (격자축)</span>
+                <div class="grid grid-cols-2 gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                    <div>
+                        <span class="block text-[10px] text-slate-400 mb-1">X축 이동</span>
+                        <input type="number" id="tf-move-x" step="0.2" oninput="liveUpdateTransform()" class="w-full bg-slate-800 border border-slate-700 text-xs text-white font-bold text-center py-1 rounded-lg focus:outline-none">
+                    </div>
+                    <div>
+                        <span class="block text-[10px] text-slate-400 mb-1">Y축 이동</span>
+                        <input type="number" id="tf-move-y" step="0.2" oninput="liveUpdateTransform()" class="w-full bg-slate-800 border border-slate-700 text-xs text-white font-bold text-center py-1 rounded-lg focus:outline-none">
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <span class="block text-[11px] font-bold text-slate-300 mb-1.5"><i class="fa-solid fa-scissors text-amber-400 mr-1"></i> 2. 상하좌우 플립 매트릭스</span>
+                <div class="grid grid-cols-2 gap-1.5">
+                    <button onclick="applyFlipEngine('horizontal')" class="py-1.5 bg-slate-900 hover:bg-slate-700 border border-slate-700 rounded-lg text-[11px] font-bold text-amber-400">左右 좌우 반전</button>
+                    <button onclick="applyFlipEngine('vertical')" class="py-1.5 bg-slate-900 hover:bg-slate-700 border border-slate-700 rounded-lg text-[11px] font-bold text-amber-400">上下 상하 반전</button>
+                </div>
+            </div>
+
+            <div id="tf-pivot-section">
+                <span class="block text-[11px] font-bold text-slate-300 mb-1.5"><i class="fa-solid fa-location-crosshairs text-emerald-400 mr-1"></i> 3. 회전 피벗 중심 좌표</span>
+                <div class="grid grid-cols-2 gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                    <div>
+                        <span class="block text-[10px] text-slate-400 mb-1">피벗 X</span>
+                        <input type="number" id="tf-pivot-x" step="0.5" oninput="liveUpdateTransform()" class="w-full bg-slate-800 border border-slate-700 text-xs text-white font-bold text-center py-1 rounded-lg focus:outline-none">
+                    </div>
+                    <div>
+                        <span class="block text-[10px] text-slate-400 mb-1">피벗 Y</span>
+                        <input type="number" id="tf-pivot-y" step="0.5" oninput="liveUpdateTransform()" class="w-full bg-slate-800 border border-slate-700 text-xs text-white font-bold text-center py-1 rounded-lg focus:outline-none">
+                    </div>
+                </div>
+            </div>
+
+            <div id="tf-rotation-section">
+                <span class="block text-[11px] font-bold text-slate-300 mb-1.5"><i class="fa-solid fa-rotate text-purple-400 mr-1"></i> 4. 회전 각도값</span>
+                <div class="bg-slate-900 p-2 rounded-xl border border-slate-800">
+                    <input type="number" id="tf-rotate-deg" step="2" oninput="liveUpdateTransform()" class="w-full bg-slate-800 border border-slate-700 text-xs text-white font-bold text-center py-1 rounded-lg focus:outline-none">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 메인 대시보드 (전체 높이 100% 꽉 채우기) -->
+    <main class="flex-grow flex flex-col md:flex-row gap-3 items-stretch justify-center w-full h-full overflow-hidden">
+        
+        <!-- 좌측 제어반 (고정 폭, 내부 스크롤 최적화) -->
+        <section class="bg-slate-800/95 backdrop-blur-md p-3.5 rounded-xl border border-slate-700 flex flex-col justify-between gap-2.5 md:w-72 shrink-0 h-full overflow-y-auto scrollbar-none">
+            <div class="flex flex-col gap-2.5">
+                <div class="text-center pb-1 border-b border-slate-700">
+                    <h1 class="text-lg font-black bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-cyan-400">🎨 VECTOR STUDIO v5.7</h1>
+                    <p class="text-[10px] text-slate-400">초광활 시네마틱 스튜디오 에디션</p>
+                </div>
+
+                <h2 class="text-xs font-bold text-slate-300 flex items-center justify-between">
+                    <span><i class="fa-solid fa-sliders mr-1 text-purple-400"></i>마스터 제어반</span>
+                    <span id="current-color-badge" class="w-3 h-3 rounded-full bg-white border border-white"></span>
+                </h2>
+                
+                <div>
+                    <div class="flex flex-col gap-1">
+                        <button id="btn-normal" onclick="setMode('normal')" class="w-full py-1.5 rounded-lg font-bold text-xs bg-purple-600 text-white text-left pl-2.5">🖋️ 자유 스케치 드로잉</button>
+                        
+                        <div class="bg-slate-900 p-1.5 rounded-lg border border-slate-700 flex flex-col gap-1">
+                            <button id="btn-fill-sketch" onclick="setMode('fill-sketch')" class="w-full py-1 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300 text-left pl-2">⭕ 1. 자유스케치 내부 채우기</button>
+                            <button id="btn-fill-vector" onclick="setMode('fill-vector')" class="w-full py-1 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300 text-left pl-2">📐 2. 기하학 파츠 채우기</button>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-1">
+                            <button id="btn-ai" onclick="setMode('ai')" class="py-1.5 rounded-lg font-bold text-xs bg-slate-700 text-slate-300">🤖 AI 분석</button>
+                            <button id="btn-move-mode" onclick="setMode('move')" class="py-1.5 rounded-lg font-bold text-xs bg-slate-700 text-slate-300">📐 파츠 이동</button>
+                        </div>
+
+                        <div id="move-sub-options" class="hidden grid grid-cols-2 gap-1 p-1 bg-slate-900 border border-slate-700 rounded-lg">
+                            <button id="btn-sub-panel" onclick="setMoveMethod('panel')" class="py-0.5 text-[9px] font-bold rounded bg-cyan-600 text-white">🎛️ 제어판</button>
+                            <button id="btn-sub-drag" onclick="setMoveMethod('drag')" class="py-0.5 text-[9px] font-bold rounded bg-slate-800 text-slate-400">🖱️ 드래그</button>
+                        </div>
+                        
+                        <button id="btn-grid-toggle" onclick="toggleGridSystem()" class="w-full py-1 bg-slate-900 border border-slate-700 text-slate-300 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1.5">
+                            <i id="grid-icon" class="fa-solid fa-border-none text-emerald-400"></i><span id="grid-text">격자 가이드 (ON)</span>
+                        </button>
+
+                        <button id="btn-left-transform" onclick="toggleTransformPanel()" class="w-full py-1.5 bg-slate-700 border border-slate-600 text-slate-500 rounded-lg font-bold text-[11px] cursor-not-allowed" disabled>
+                            <i class="fa-solid fa-arrows-spin text-cyan-400 mr-1"></i>수치 제어반 열기
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <span class="block text-[11px] text-slate-400 mb-1">익스프레스 컬러 스와치</span>
+                    <div class="flex flex-wrap gap-1" id="palette"></div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-700 p-1.5 rounded-lg">
+                    <div class="grid grid-cols-3 gap-1 mb-1">
+                        <input type="number" id="rgb-r" min="0" max="255" value="255" class="w-full bg-slate-800 border border-slate-700 rounded-md text-center text-xs p-0.5 text-red-400 font-bold">
+                        <input type="number" id="rgb-g" min="0" max="255" value="255" class="w-full bg-slate-800 border border-slate-700 rounded-md text-center text-xs p-0.5 text-emerald-400 font-bold">
+                        <input type="number" id="rgb-b" min="0" max="255" value="255" class="w-full bg-slate-800 border border-slate-700 rounded-md text-center text-xs p-0.5 text-blue-400 font-bold">
+                    </div>
+                    <button onclick="createNewRGBColor()" class="w-full py-1 bg-gradient-to-r from-purple-600 to-cyan-600 text-white rounded-md text-[10px] font-bold">배합 컬러칩 추가</button>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-700 p-1.5 rounded-lg">
+                    <div class="flex gap-2 items-center">
+                        <span id="brush-label-text" class="text-[10px] font-bold text-slate-300 shrink-0">🖌️ 붓 두께</span>
+                        <input type="number" id="brush-size-input" min="1" max="150" value="6" oninput="changeBrushSizeDirect(this.value)" class="w-full bg-slate-800 border border-slate-700 text-xs font-bold text-center py-0.5 rounded-md text-purple-400 focus:outline-none">
+                        <span class="text-[10px] text-slate-400 shrink-0">px</span>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-1 border-t border-slate-700 pt-1.5">
+                    <span class="block text-[11px] font-bold text-purple-400 mb-0.5">⚔️ 마스터 도안 라이브러리 (20)</span>
+                    <div id="template-button-box" class="grid grid-cols-1 gap-1 max-h-[160px] md:max-h-[220px] overflow-y-auto pr-1 scrollbar-none"></div>
+                </div>
+            </div>
+
+            <!-- 유틸리티 영역 -->
+            <div class="flex flex-col gap-1 border-t border-slate-700 pt-2 shrink-0">
+                <div class="grid grid-cols-2 gap-1">
+                    <button onclick="undoHistoricStep()" class="py-1 bg-slate-900 border border-slate-700 text-white rounded-lg font-bold text-[11px] flex items-center justify-center gap-1">↩️ 뒤로</button>
+                    <button onclick="redoHistoricStep()" class="py-1 bg-slate-900 border border-slate-700 text-white rounded-lg font-bold text-[11px] flex items-center justify-center gap-1">↪️ 앞으로</button>
+                </div>
+                <button onclick="toggleEraserMode()" id="btn-eraser" class="w-full py-1 bg-slate-700 text-slate-300 rounded-lg font-bold text-xs">🧼 지우개 비활성화</button>
+                <button onclick="saveCanvasAsImageFile()" class="w-full py-1.5 bg-gradient-to-r from-emerald-500 to-cyan-600 text-white rounded-lg font-extrabold text-xs shadow-md">💾 작품 마스터피스 저장</button>
+                <button onclick="clearCanvas()" class="w-full py-1 bg-rose-600/20 text-rose-400 rounded-lg font-bold text-[11px]">🗑️ 캔버스 전체 포맷</button>
+            </div>
+        </section>
+
+        <!-- 우측 캔버스 스튜디오 (가변 폭, 마스터 공간화) -->
+        <section class="flex-grow flex flex-col gap-2 relative h-full overflow-hidden">
+            <!-- 상단 바 정보 고정 -->
+            <div class="flex items-center justify-between text-[11px] text-slate-400 px-1 shrink-0">
+                <div class="flex items-center gap-1.5">
+                    <span id="badge-mode" class="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded-full font-bold">자유 드로잉</span>
+                    <span id="status-text" class="truncate max-w-[280px] md:max-w-none">안내: 지우개를 작동시켜도 격자 가이드는 절대 지워지지 않습니다.</span>
+                </div>
+                <div id="canvas-resolution" class="font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">0 x 0</div>
+            </div>
+
+            <!-- 🟩 핵심 변경: 마드 패널의 공간 전체를 할당받아 최대 크기를 유지하는 도화지 시스템 -->
+            <div class="flex-grow w-full h-full relative bg-slate-950 rounded-xl border-2 border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center">
+                <div id="scan-bar" class="scan-line"></div>
+                <canvas id="paintCanvas" class="w-full h-full block absolute inset-0"></canvas>
+            </div>
+
+            <!-- 하단 컴팩트 오브젝트 매니저 레이어 -->
+            <div class="bg-slate-900/95 border border-slate-700 p-2 rounded-xl shadow-xl flex flex-col xl:flex-row items-center justify-between gap-1.5 shrink-0">
+                <div class="flex items-center gap-1 text-[11px] text-slate-300 font-semibold shrink-0">
+                    <i class="fa-solid fa-layer-group text-cyan-400"></i>
+                    <span>오브젝트 뷰어:</span>
+                </div>
+                
+                <div id="parts-button-container" class="flex flex-wrap gap-1 items-center justify-start flex-grow max-h-[50px] overflow-y-auto scrollbar-none">
+                    <span class="text-[10px] text-slate-500 italic">도안 레이어가 로드되면 개별 파츠 제어기가 실시간 빌드됩니다.</span>
+                </div>
+
+                <div id="parts-custom-control-box" class="hidden flex gap-1 shrink-0 justify-end w-full xl:w-auto">
+                    <button onclick="toggleCustomPartPanel()" class="py-0.5 px-1.5 bg-purple-600/20 text-purple-400 border border-purple-500/30 rounded text-[10px] font-bold hover:bg-purple-600 hover:text-white">
+                        + 파츠 융합
+                    </button>
+                    <button onclick="deleteSelectedPart()" id="btn-delete-part" class="py-0.5 px-1.5 bg-rose-600 text-white rounded text-[10px] font-bold">
+                        즉시 제거
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- AI 스캔 컨버터 모달 -->
+    <div id="ai-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl max-w-sm w-full mx-4 text-center">
+            <h3 class="text-lg font-bold text-purple-400 mb-1">🤖 AI 고해상도 패턴 분석</h3>
+            <p class="text-slate-300 text-xs mb-4">그려진 자유 스케치의 벡터 흐름을 계산했습니다. 매칭 추천 도안 구조를 강제 융합할까요?</p>
+            <div class="flex gap-2">
+                <button onclick="closeModal()" class="flex-1 py-2 bg-slate-700 text-slate-300 rounded-lg font-bold text-xs">스케치 더하기</button>
+                <button onclick="processAI()" class="flex-1 py-2 bg-gradient-to-r from-purple-500 to-cyan-500 text-white rounded-lg font-bold text-xs">분석 도안 병합</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 스크립트 로직 (이전 버전 완벽 동일 유지) -->
+    <script>
+        const canvas = document.getElementById('paintCanvas'); const ctx = canvas.getContext('2d');
+        const badgeMode = document.getElementById('badge-mode'); const statusText = document.getElementById('status-text');
+        const scanBar = document.getElementById('scan-bar'); const aiModal = document.getElementById('ai-modal');
+        const customControlBox = document.getElementById('parts-custom-control-box'); const btnDeletePart = document.getElementById('btn-delete-part');
+        const btnLeftTransform = document.getElementById('btn-left-transform'); const moveSubOptions = document.getElementById('move-sub-options');
+        const customPartModal = document.getElementById('custom-part-modal'); const customShapeType = document.getElementById('custom-shape-type');
+        const customPartInputName = document.getElementById('custom-part-input-name'); const colorModal = document.getElementById('color-picker-modal');
+        const modalPartName = document.getElementById('modal-part-name'); const modalColorGrid = document.getElementById('modal-color-grid');
+        const partsContainer = document.getElementById('parts-button-container'); const currentColorBadge = document.getElementById('current-color-badge');
+        const transformModal = document.getElementById('transform-part-modal'); const tfPartNameDisplay = document.getElementById('tf-part-name-display');
+        const tfCircleWarning = document.getElementById('tf-circle-warning'); const tfRotationSection = document.getElementById('tf-rotation-section');
+        const tfPivotSection = document.getElementById('tf-pivot-section');
+        const tfMoveX = document.getElementById('tf-move-x'); const tfMoveY = document.getElementById('tf-move-y');
+        const tfPivotX = document.getElementById('tf-pivot-x'); const tfPivotY = document.getElementById('tf-pivot-y');
+        const tfRotateDeg = document.getElementById('tf-rotate-deg'); const tfHideOthersCheckbox = document.getElementById('tf-hide-others');
+
+        let drawingCanvas = document.createElement('canvas'); let dCtx = drawingCanvas.getContext('2d');
+
+        let isEraserMode = false; let normalBrushSize = 6; let eraserBrushSize = 24;
+        let isDrawing = false; let currentMode = 'normal'; let moveMethod = 'panel';
+        let strokeColor = '#f1f5f9'; let lastX = 0, lastY = 0;
+        let COLOR_POOL = ['#f1f5f9', '#f87171', '#fbbf24', '#34d399', '#60a5fa', '#c084fc', '#f472b6', '#ef4444', '#f97316', '#22c55e', '#3b82f6', '#a855f7', '#06b6d4', '#10b981', '#f59e0b'];
+        let isGridSystemOn = true; let hideOthersGlobally = false;
+        let isDraggingPart = false; let dragTargetPartRef = null;
+        let dragStartMouseX = 0, dragStartMouseY = 0, dragStartPartX = 0, dragStartPartY = 0;
+
+        let undoStack = []; let redoStack = [];
+        let globalCompositionParts = []; let coloredPartsState = {}; let currentFocusedPart = null;
+        let aiTemplateCycleIndex = 0;
+        let templatePlacementOffsetCount = 0;
+
+        const DRAWING_TEMPLATES = [
+            { id: 1, label: '01. 네온 기샤', emoji: '🎭', parts: [
+                { name: '페이스 메인 코어베이스', shape: 'triangle', x: 0, y: -0.5, rot: 180, scale: 0.9 },
+                { name: '사이버네틱 좌측 헤드 기어', shape: 'rect', x: -1.8, y: -1.5, rot: 15, scale: 0.5 },
+                { name: '우측 전통 가발 가해 헤일로', shape: 'circle', x: 1.5, y: -2.0, rot: -30, scale: 0.8 },
+                { name: '홀로그램 벚꽃 분출구 A', shape: 'star', x: -3.0, y: 1.0, rot: 45, scale: 0.4 },
+                { name: '홀로그램 벚꽃 분출구 B', shape: 'star', x: 3.0, y: 1.5, rot: -15, scale: 0.3 }
+            ]},
+            { id: 2, label: '02. 안드로이드의 눈물', emoji: '👁️', parts: [
+                { name: '메인 렌즈 안구 프레임', shape: 'circle', x: 0, y: -0.5, rot: 0, scale: 1.2 },
+                { name: '정밀 동공 스캐너 링', shape: 'circle', x: 0, y: -0.5, rot: 0, scale: 0.5 },
+                { name: '수은 눈물 유출 가이드레일', shape: 'triangle', x: 0, y: 2.5, rot: 0, scale: 0.6 },
+                { name: '반사 야경 매트릭스 블록', shape: 'rect', x: 0.8, y: -0.2, rot: 25, scale: 0.4 }
+            ]},
+            { id: 3, label: '03. 테크노 바스켓 사과', emoji: '🍎', parts: [
+                { name: '메카닉 외곽 바구니 프레임', shape: 'rect', x: 0, y: 1.5, rot: 0, scale: 1.1 },
+                { name: '디지털 데이터 코어 사과', shape: 'circle', x: 0, y: -0.8, rot: 0, scale: 0.7 },
+                { name: '가시 덤불 록킹 핀 X', shape: 'triangle', x: -1.5, y: 0.2, rot: -45, scale: 0.4 },
+                { name: '가시 덤불 록킹 핀 Y', shape: 'triangle', x: 1.5, y: 0.2, rot: 45, scale: 0.4 }
+            ]},
+            { id: 4, label: '04. 우주비행사의 조각', emoji: '👨‍🚀', parts: [
+                { name: '헬멧 바이저 아우터 쉘', shape: 'circle', x: 0, y: -0.5, rot: 0, scale: 1.3 },
+                { name: '블랙홀 소용돌이 흡입구', shape: 'circle', x: -0.4, y: -0.4, rot: 0, scale: 0.6 },
+                { name: '헬멧 우측 균열부 파편 A', shape: 'triangle', x: 2.2, y: -1.2, rot: 60, scale: 0.3 },
+                { name: '헬멧 우측 균열부 파편 B', shape: 'rhombus', x: 2.5, y: 0.5, rot: 15, scale: 0.3 }
+            ]},
+            { id: 5, label: '05. 달을 삼킨 늑대', emoji: '🐺', parts: [
+                { name: '초승달 크레센트 코어 가이드', shape: 'circle', x: 0, y: -1.0, rot: 0, scale: 1.1 },
+                { name: '포효하는 늑대 하악골 프레임', shape: 'triangle', x: -1.0, y: 0.5, rot: 135, scale: 0.8 },
+                { name: '늑대 메인 상악 브릿지', shape: 'rect', x: 0.8, y: -0.2, rot: -30, scale: 0.6 },
+                { name: '성운 분출 성운 오라 스타', shape: 'star', x: 2.8, y: -2.0, rot: 12, scale: 0.5 }
+            ]},
+            { id: 6, label: '06. 오피디안 하트 심장', emoji: '🫀', parts: [
+                { name: '인간 정밀 심장 베이스', shape: 'rhombus', x: 0, y: 0, rot: 45, scale: 1.0 },
+                { name: '뱀 비늘 바디 코일링 고리', shape: 'circle', x: -0.2, y: 0.2, rot: 0, scale: 1.2 },
+                { name: '장미 넝쿨 전개 트리거 스파이크', shape: 'triangle', x: 1.5, y: -2.0, rot: -15, scale: 0.5 },
+                { name: '대동맥 허브 터미널 튜브', shape: 'rect', x: -0.8, y: -1.8, rot: 90, scale: 0.4 }
+            ]},
+            { id: 7, label: '07. 타락한 세라핌 날개', emoji: '🪽', parts: [
+                { name: '좌측 상단 신성 깃털 가해', shape: 'triangle', x: -2.5, y: -2.5, rot: -40, scale: 0.9 },
+                { name: '우측 상단 신성 깃털 가해', shape: 'triangle', x: 2.5, y: -2.5, rot: 40, scale: 0.9 },
+                { name: '좌측 하단 타락 재 스위퍼', shape: 'rhombus', x: -3.5, y: 0.5, rot: 15, scale: 0.6 },
+                { name: '우측 하단 타락 재 스위퍼', shape: 'rhombus', x: 3.5, y: 0.5, rot: -15, scale: 0.6 },
+                { name: '천사 본체 백 앵커 블록', shape: 'rect', x: 0, y: -0.2, rot: 0, scale: 0.5 }
+            ]},
+            { id: 8, label: '08. 키메라 사슴 산호뿔', emoji: '🦌', parts: [
+                { name: '신비로운 사슴 두부 베이스', shape: 'triangle', x: 0, y: 1.0, rot: -90, scale: 0.7 },
+                { name: '좌측 산호 보석 대형 뿔', shape: 'rhombus', x: -2.2, y: -2.0, rot: -45, scale: 0.8 },
+                { name: '우측 산호 보석 대형 뿔', shape: 'rhombus', x: 2.2, y: -2.0, rot: 45, scale: 0.8 },
+                { name: '고대 룬 문자 각인 플레이트', shape: 'rect', x: 0, y: 2.8, rot: 0, scale: 0.4 }
+            ]},
+            { id: 9, label: '09. 시간의 연금술사', emoji: '⏳', parts: [
+                { name: '모래시계 상단 태양의 방', shape: 'triangle', x: 0, y: -2.0, rot: 180, scale: 0.8 },
+                { name: '모래시계 하단 밤하늘의 방', shape: 'triangle', x: 0, y: 1.5, rot: 0, scale: 0.8 },
+                { name: '중앙 조절 동력 커넥터', shape: 'circle', x: 0, y: -0.2, rot: 0, scale: 0.4 },
+                { name: '파손된 시간의 태엽 톱니바퀴', shape: 'star', x: 1.8, y: -0.2, rot: 35, scale: 0.5 }
+            ]},
+            { id: 10, label: '10. 유리 나비 박제', emoji: '🦋', parts: [
+                { name: '나비 메인 코어 센터 바디', shape: 'rect', x: 0, y: -0.2, rot: 0, scale: 0.4 },
+                { name: '좌측 스테인드글라스 윙 프레임', shape: 'triangle', x: -2.2, y: -1.5, rot: -60, scale: 1.0 },
+                { name: '우측 스테인드글라스 윙 프레임', shape: 'triangle', x: 2.2, y: -1.5, rot: 60, scale: 1.0 },
+                { name: '하단 그림자 굴절 투사 다이아', shape: 'rhombus', x: 0, y: 2.5, rot: 0, scale: 0.5 }
+            ]},
+            { id: 11, label: '11. 해태와 청파 파도', emoji: '🦁', parts: [
+                { name: '해태 포효 메인 헤드 블록', shape: 'rect', x: 0, y: -1.0, rot: 0, scale: 0.9 },
+                { name: '전면 하이퍼 톱니 갈기 쉴드', shape: 'star', x: 0, y: -2.8, rot: 0, scale: 0.6 },
+                { name: '좌측 진격의 청파 거친 파도', shape: 'triangle', x: -3.0, y: 1.5, rot: -120, scale: 0.8 },
+                { name: '우측 진격의 청파 거친 파도', shape: 'triangle', x: 3.0, y: 1.5, rot: 120, scale: 0.8 }
+            ]},
+            { id: 12, label: '12. 단청 잉어 역류', emoji: '🐟', parts: [
+                { name: '비단잉어 유선형 가이드 메인', shape: 'rhombus', x: 0, y: 0, rot: -30, scale: 1.1 },
+                { name: '오방색 단청 기하학 원형 헤일로', shape: 'circle', x: -0.5, y: -0.5, rot: 0, scale: 0.7 },
+                { name: '좌측 방향제어 지느러미 플랩', shape: 'triangle', x: -1.8, y: 1.0, rot: -45, scale: 0.4 },
+                { name: '우측 방향제어 지느러미 플랩', shape: 'triangle', x: 1.5, y: -1.2, rot: 135, scale: 0.4 }
+            ]},
+            { id: 13, label: '13. 신선선녀의 부채', emoji: '🪭', parts: [
+                { name: '전통 접이식 부채 메인 프레임', shape: 'circle', x: 0, y: -1.0, rot: 0, scale: 1.3 },
+                { name: '첩첩산중 수묵화 레이아웃 블록', shape: 'triangle', x: 0, y: -0.5, rot: 0, scale: 0.8 },
+                { name: '하단 매듭 노리개 터셀 하우징', shape: 'rect', x: 0, y: 2.2, rot: 0, scale: 0.3 },
+                { name: '매듭 장식용 투명 비드 코어', shape: 'rhombus', x: 0, y: 3.8, rot: 45, scale: 0.2 }
+            ]},
+            { id: 14, label: '14. 백호의 눈빛 수풀', emoji: '🐅', parts: [
+                { name: '백호 페이스 마스크 센터 베이스', shape: 'rect', x: 0, y: 0, rot: 45, scale: 0.9 },
+                { name: '아이스 블루 전술 안구 레일 L', shape: 'circle', x: -0.8, y: -0.4, rot: 0, scale: 0.25 },
+                { name: '아이스 블루 전술 안구 레일 R', shape: 'circle', x: 0.8, y: -0.4, rot: 0, scale: 0.25 },
+                { name: '대나무 수풀 은폐용 가시 슬랫 A', shape: 'triangle', x: -2.5, y: 1.5, rot: -30, scale: 0.6 },
+                { name: '대나무 수풀 은폐용 가시 슬랫 B', shape: 'triangle', x: 2.5, y: 1.5, rot: 30, scale: 0.6 }
+            ]},
+            { id: 15, label: '15. 월하연 흑연꽃', emoji: '🪷', parts: [
+                { name: '보름달 백라이트 에너지 고리', shape: 'circle', x: 0, y: -1.0, rot: 1.4 },
+                { name: '흑연꽃 메인 센터 코어 피스', shape: 'rhombus', x: 0, y: 0.8, rot: 0, scale: 0.6 },
+                { name: '연꽃잎 전개 아우터 블레이드 L', shape: 'triangle', x: -1.5, y: 0.8, rot: -60, scale: 0.5 },
+                { name: '연꽃잎 전개 아우터 블레이드 R', shape: 'triangle', x: 1.5, y: 0.8, rot: 60, scale: 0.5 },
+                { name: '낙하하는 진주 이슬 방울 엔드', shape: 'circle', x: 0, y: 2.8, rot: 0, scale: 0.2 }
+            ]},
+            { id: 16, label: '16. 빈티지 마리오네트', emoji: '🪆', parts: [
+                { name: '나무 인형 몸체 제어 박스', shape: 'rect', x: 0, y: 1.0, rot: 15, scale: 0.7 },
+                { name: '인간의 구원 구체 조작 마스터', shape: 'circle', x: 0, y: -2.5, rot: 0, scale: 0.6 },
+                { name: '단선되는 좌측 실 홀더 모듈', shape: 'triangle', x: -1.8, y: -0.5, rot: -45, scale: 0.4 },
+                { name: '단선되는 우측 실 홀더 모듈', shape: 'triangle', x: 1.8, y: 0.8, rot: 135, scale: 0.3 }
+            ]},
+            { id: 17, label: '17. 아르누보 넝쿨 열쇠', emoji: '🔑', parts: [
+                { name: '식물 넝쿨 유려 곡선 손잡이링', shape: 'circle', x: 0, y: -2.2, rot: 0, scale: 0.9 },
+                { name: '열쇠 메인 스트러트 샤프트 대', shape: 'rect', x: 0, y: 0.5, rot: 90, scale: 0.4 },
+                { name: '고딕 성벽 구조 형상 기어비트', shape: 'triangle', x: 1.2, y: 2.5, rot: 90, scale: 0.5 },
+                { name: '손잡이 중앙 안착 보석 세팅', shape: 'rhombus', x: 0, y: -2.2, rot: 0, scale: 0.3 }
+            ]},
+            { id: 18, label: '18. 멜랑콜리아 뮤즈', emoji: '🧜‍♀️', parts: [
+                { name: '아르누보 양식 장식 원형 액자', shape: 'circle', x: 0, y: -0.5, rot: 0, scale: 1.3 },
+                { name: '여신의 슬픈 측면 안면 코어', shape: 'triangle', x: -0.4, y: -0.2, rot: -90, scale: 0.6 },
+                { name: '바다 파도로 변하는 머리카락 A', shape: 'star', x: 1.8, y: -1.2, rot: 15, scale: 0.6 },
+                { name: '바다 파도로 변하는 머리카락 B', shape: 'star', x: 2.2, y: 0.8, rot: 45, scale: 0.5 }
+            ]},
+            { id: 19, label: '19. 거울 속의 회랑', emoji: '🪞', parts: [
+                { name: '엔틱 거울 외곽 프레임 리지드', shape: 'rhombus', x: 0, y: 0, rot: 0, scale: 1.2 },
+                { name: '고딕 성당 회랑 진입 게이트웨이', shape: 'rect', x: 0, y: 0, rot: 0, scale: 0.7 },
+                { name: '소실점 무한 터널 진입 홀', shape: 'circle', x: 0, y: 0, rot: 0, scale: 0.3 }
+            ]},
+            { id: 20, label: '20. 비스포크 스컬 태엽', emoji: '💀', parts: [
+                { name: '인간 두골 아우터 메인 셸', shape: 'circle', x: 0, y: -1.0, rot: 0, scale: 1.0 },
+                { name: '하악 기계 턱관절 블록 모듈', shape: 'rect', x: 0, y: 1.2, rot: 0, scale: 0.7 },
+                { name: '명품 메인 이스케이프먼트 태엽', shape: 'star', x: -0.8, y: -0.8, rot: 12, scale: 0.5 },
+                { name: '센터 기동 크로노 무브먼트 휠', shape: 'star', x: 0.8, y: -0.2, rot: -24, scale: 0.4 }
+            ]}
+        ];
+
+        function captureHistoryStateSnapshot() {
+            undoStack.push({
+                parts: JSON.parse(JSON.stringify(globalCompositionParts)),
+                colors: { ...coloredPartsState },
+                focused: currentFocusedPart,
+                drawingBlob: drawingCanvas.toDataURL()
+            });
+            redoStack = []; 
+        }
+
+        function undoHistoricStep() {
+            if (undoStack.length <= 1) {
+                if(undoStack.length === 1) {
+                    const originState = undoStack.pop();
+                    redoStack.push({
+                        parts: JSON.parse(JSON.stringify(globalCompositionParts)),
+                        colors: { ...coloredPartsState },
+                        focused: currentFocusedPart,
+                        drawingBlob: drawingCanvas.toDataURL()
+                    });
+                    globalCompositionParts = originState.parts;
+                    coloredPartsState = originState.colors;
+                    currentFocusedPart = originState.focused;
+                    let img = new Image();
+                    img.onload = function() { dCtx.clearRect(0,0,drawingCanvas.width, drawingCanvas.height); dCtx.drawImage(img, 0,0); compositeAndRenderFinalScreen(); };
+                    img.src = originState.drawingBlob;
+                }
+                statusText.innerText = "↩️ 초기 원본 기점으로 작업 단계를 되돌렸습니다.";
+                buildPartsController(); updateActionButtonsState(); return;
+            }
+            redoStack.push({
+                parts: JSON.parse(JSON.stringify(globalCompositionParts)),
+                colors: { ...coloredPartsState },
+                focused: currentFocusedPart,
+                drawingBlob: drawingCanvas.toDataURL()
+            });
+            const prev = undoStack.pop();
+            globalCompositionParts = prev.parts; coloredPartsState = prev.colors; currentFocusedPart = prev.focused;
+            if (globalCompositionParts.length === 0) { customControlBox.classList.add('hidden'); templatePlacementOffsetCount = 0; }
+            buildPartsController(); updateActionButtonsState(); syncTransformPanelData();
+            let img = new Image();
+            img.onload = function() { dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height); dCtx.drawImage(img, 0, 0); compositeAndRenderFinalScreen(); };
+            img.src = prev.drawingBlob;
+            statusText.innerText = "↩️ 이전 작업 단계를 복구했습니다.";
+        }
+
+        function redoHistoricStep() {
+            if (redoStack.length === 0) { statusText.innerText = "↪️ 다시 실행할 최신 내역이 없습니다."; return; }
+            const next = redoStack.pop();
+            undoStack.push({
+                parts: JSON.parse(JSON.stringify(globalCompositionParts)),
+                colors: { ...coloredPartsState },
+                focused: currentFocusedPart,
+                drawingBlob: drawingCanvas.toDataURL()
+            });
+            globalCompositionParts = next.parts; coloredPartsState = next.colors; currentFocusedPart = next.focused;
+            customControlBox.classList.remove('hidden'); buildPartsController(); updateActionButtonsState(); syncTransformPanelData();
+            let img = new Image();
+            img.onload = function() { dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height); dCtx.drawImage(img, 0, 0); compositeAndRenderFinalScreen(); };
+            img.src = next.drawingBlob;
+            statusText.innerText = "↪️ 앞으로가기 가동을 완료했습니다.";
+        }
+
+        function resizeCanvas() {
+            const container = canvas.parentNode;
+            const rect = container.getBoundingClientRect();
+            canvas.width = rect.width; canvas.height = rect.height;
+            
+            let tempCanvas = document.createElement('canvas');
+            tempCanvas.width = drawingCanvas.width; tempCanvas.height = drawingCanvas.height;
+            tempCanvas.getContext('2d').drawImage(drawingCanvas, 0, 0);
+            
+            drawingCanvas.width = rect.width; drawingCanvas.height = rect.height;
+            dCtx.drawImage(tempCanvas, 0, 0);
+            
+            document.getElementById('canvas-resolution').innerText = `${Math.round(rect.width)} x ${Math.round(rect.height)}`;
+            if(undoStack.length === 0) captureHistoryStateSnapshot();
+            compositeAndRenderFinalScreen();
+        }
+
+        const GRID_UNIT = 15;
+        function drawBackgroundGridSystem(targetCtx) {
+            if (!isGridSystemOn) return;
+            targetCtx.save();
+            targetCtx.strokeStyle = '#1e293b'; targetCtx.lineWidth = 0.8;
+            for (let y = 0; y < canvas.height; y += GRID_UNIT) {
+                targetCtx.beginPath(); targetCtx.moveTo(0, y); targetCtx.lineTo(canvas.width, y); targetCtx.stroke();
+            }
+            for (let x = 0; x < canvas.width; x += GRID_UNIT) {
+                targetCtx.beginPath(); targetCtx.moveTo(x, 0); targetCtx.lineTo(x, canvas.height); targetCtx.stroke();
+            }
+            targetCtx.strokeStyle = '#334155'; targetCtx.lineWidth = 2;
+            targetCtx.beginPath(); targetCtx.moveTo(canvas.width/2, 0); targetCtx.lineTo(canvas.width/2, canvas.height); targetCtx.stroke();
+            targetCtx.beginPath(); targetCtx.moveTo(0, canvas.height/2); targetCtx.lineTo(canvas.width, canvas.height/2); targetCtx.stroke();
+            targetCtx.restore();
+        }
+
+        function toggleGridSystem() {
+            isGridSystemOn = !isGridSystemOn;
+            const icon = document.getElementById('grid-icon'); const text = document.getElementById('grid-text');
+            if (isGridSystemOn) { icon.className = "fa-solid fa-border-none text-emerald-400"; text.innerText = "격자 가이드 (ON)"; } 
+            else { icon.className = "fa-solid fa-border-all text-slate-500"; text.innerText = "격자 가이드 (OFF)"; }
+            compositeAndRenderFinalScreen();
+        }
+
+        function renderPaletteChips() {
+            const container = document.getElementById('palette'); container.innerHTML = '';
+            COLOR_POOL.forEach(color => {
+                const btn = document.createElement('button');
+                btn.className = `w-4 h-4 rounded-full border ${strokeColor === color ? 'ring-2 ring-purple-500 scale-110 border-white' : 'border-transparent'}`;
+                btn.style.backgroundColor = color; btn.onclick = () => setBrushColor(color); container.appendChild(btn);
+            });
+        }
+
+        function renderTemplateButtons() {
+            const container = document.getElementById('template-button-box'); container.innerHTML = '';
+            DRAWING_TEMPLATES.forEach(item => {
+                const btn = document.createElement('button'); btn.className = "w-full py-1 px-2 bg-slate-700 hover:bg-purple-700 text-left rounded-md text-[10px] font-bold text-slate-200 transition truncate flex items-center justify-between";
+                btn.onclick = () => { appendTemplateLayer(item); };
+                btn.innerHTML = `<span>${item.emoji} ${item.label}</span> <span class="text-[8px] bg-slate-900 px-1 py-0.2 rounded text-purple-300">${item.parts.length}P</span>`;
+                container.appendChild(btn);
+            });
+        }
+
+        function appendTemplateLayer(item) {
+            let uniqueId = Date.now().toString().slice(-3);
+            let maxColumns = Math.floor((canvas.width / GRID_UNIT) / 12) || 2;
+            let col = templatePlacementOffsetCount % maxColumns;
+            let row = Math.floor(templatePlacementOffsetCount / maxColumns);
+            let offsetX = (col - Math.floor(maxColumns / 2)) * 12;
+            let offsetY = (row - 0.5) * 12;
+
+            item.parts.forEach(srcPart => {
+                const combinedName = `${srcPart.name} (#${uniqueId})`;
+                globalCompositionParts.push({ ...srcPart, name: combinedName, x: srcPart.x + offsetX, y: srcPart.y + offsetY, rot: srcPart.rot || 0, pivotX: 0, pivotY: 0, flipX: 1, flipY: 1 });
+                coloredPartsState[combinedName] = COLOR_POOL[(globalCompositionParts.length) % COLOR_POOL.length];
+                currentFocusedPart = combinedName;
+            });
+            templatePlacementOffsetCount++;
+            statusText.innerText = `📦 [${item.label}] 도안이 겹침 없이 안전 분산 자동 안착되었습니다.`;
+            badgeMode.innerText = "벡터 융합 레이어"; customControlBox.classList.remove('hidden');
+            captureHistoryStateSnapshot(); updateActionButtonsState(); buildPartsController(); syncTransformPanelData(); compositeAndRenderFinalScreen();
+        }
+
+        function createNewRGBColor() {
+            const r = Math.max(0, Math.min(255, parseInt(document.getElementById('rgb-r').value) || 0));
+            const g = Math.max(0, Math.min(255, parseInt(document.getElementById('rgb-g').value) || 0));
+            const b = Math.max(0, Math.min(255, parseInt(document.getElementById('rgb-b').value) || 0));
+            const hex = "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+            if (!COLOR_POOL.includes(hex)) { COLOR_POOL.unshift(hex); setBrushColor(hex); renderPaletteChips(); }
+        }
+
+        function performFloodFill(startX, startY, fillHexColor) {
+            startX = Math.floor(startX); startY = Math.floor(startY);
+            if (startX < 0 || startX >= drawingCanvas.width || startY < 0 || startY >= drawingCanvas.height) return;
+            const imgData = dCtx.getImageData(0, 0, drawingCanvas.width, drawingCanvas.height); const data = imgData.data;
+            const targetR = parseInt(fillHexColor.slice(1,3), 16); const targetG = parseInt(fillHexColor.slice(3,5), 16); const targetB = parseInt(fillHexColor.slice(5,7), 16);
+            const startPos = (startY * drawingCanvas.width + startX) * 4;
+            const startR = data[startPos]; const startG = data[startPos+1]; const startB = data[startPos+2]; const startA = data[startPos+3];
+            if (startA === 255 && startR === targetR && startG === targetG && startB === targetB) return;
+            const queue = [[startX, startY]]; const width = drawingCanvas.width; const height = drawingCanvas.height;
+            while (queue.length > 0) {
+                const [cx, cy] = queue.pop(); let idx = (cy * width + cx) * 4;
+                if ((startA === 0 && data[idx+3] === 0) || (Math.abs(data[idx] - startR) < 30 && Math.abs(data[idx+1] - startG) < 30 && Math.abs(data[idx+2] - startB) < 30 && data[idx+3] === startA)) {
+                    data[idx] = targetR; data[idx+1] = targetG; data[idx+2] = targetB; data[idx+3] = 255;
+                    if (cx > 0) queue.push([cx - 1, cy]); if (cx < width - 1) queue.push([cx + 1, cy]);
+                    if (cy > 0) queue.push([cx, cy - 1]); if (cy < height - 1) queue.push([cx, cy + 1]);
+                }
+            }
+            dCtx.putImageData(imgData, 0, 0); captureHistoryStateSnapshot(); compositeAndRenderFinalScreen();
+        }
+
+        function getCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            let cx = e.touches ? e.touches[0].clientX : e.clientX; let cy = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: (cx - rect.left) * (canvas.width / rect.width), y: (cy - rect.top) * (canvas.height / rect.height) };
+        }
+
+        function startDrawing(e) {
+            const c = getCoordinates(e);
+            if (currentMode === 'fill-sketch') { performFloodFill(c.x, c.y, strokeColor); return; }
+            if (currentMode === 'fill-vector') {
+                const cx = canvas.width / 2; const cy = canvas.height / 2;
+                for (let i = globalCompositionParts.length - 1; i >= 0; i--) {
+                    let p = globalCompositionParts[i]; let partCenterX = cx + (p.x * GRID_UNIT); let partCenterY = cy + (p.y * GRID_UNIT);
+                    if (Math.hypot(c.x - partCenterX, c.y - partCenterY) < (GRID_UNIT * p.scale * 6)) {
+                        currentFocusedPart = p.name; openColorSelectorModal(p.name); return;
+                    }
+                }
+                return;
+            }
+            if (currentMode === 'move' && moveMethod === 'drag') {
+                const cx = canvas.width / 2; const cy = canvas.height / 2;
+                for (let i = globalCompositionParts.length - 1; i >= 0; i--) {
+                    let p = globalCompositionParts[i]; let partCenterX = cx + (p.x * GRID_UNIT); let partCenterY = cy + (p.y * GRID_UNIT);
+                    if (Math.hypot(c.x - partCenterX, c.y - partCenterY) < (GRID_UNIT * p.scale * 6)) {
+                        isDraggingPart = true; dragTargetPartRef = p; currentFocusedPart = p.name;
+                        dragStartMouseX = c.x; dragStartMouseY = c.y; dragStartPartX = p.x; dragStartPartY = p.y;
+                        buildPartsController(); syncTransformPanelData(); compositeAndRenderFinalScreen(); return;
+                    }
+                }
+                return;
+            }
+            if (currentMode === 'move' || currentMode === 'ai') return;
+            isDrawing = true; lastX = c.x; lastY = c.y;
+            dCtx.save(); dCtx.lineCap = 'round'; dCtx.lineJoin = 'round';
+            if (isEraserMode) { dCtx.globalCompositeOperation = 'destination-out'; dCtx.strokeStyle = 'rgba(0,0,0,1)'; dCtx.lineWidth = eraserBrushSize; } 
+            else { dCtx.globalCompositeOperation = 'source-over'; dCtx.strokeStyle = strokeColor; dCtx.lineWidth = normalBrushSize; }
+            dCtx.beginPath(); dCtx.moveTo(lastX, lastY); dCtx.lineTo(c.x, c.y); dCtx.stroke(); dCtx.restore();
+            compositeAndRenderFinalScreen();
+        }
+
+        function draw(e) {
+            const c = getCoordinates(e);
+            if (currentMode === 'move' && moveMethod === 'drag' && isDraggingPart && dragTargetPartRef) {
+                dragTargetPartRef.x = dragStartPartX + (c.x - dragStartMouseX) / GRID_UNIT;
+                dragTargetPartRef.y = dragStartPartY + (c.y - dragStartMouseY) / GRID_UNIT;
+                syncTransformPanelData(); compositeAndRenderFinalScreen(); return;
+            }
+            if (!isDrawing) return;
+            dCtx.save(); dCtx.lineCap = 'round'; dCtx.lineJoin = 'round';
+            if (isEraserMode) { dCtx.globalCompositeOperation = 'destination-out'; dCtx.strokeStyle = 'rgba(0,0,0,1)'; dCtx.lineWidth = eraserBrushSize; } 
+            else { dCtx.globalCompositeOperation = 'source-over'; dCtx.strokeStyle = strokeColor; dCtx.lineWidth = normalBrushSize; }
+            dCtx.beginPath(); dCtx.moveTo(lastX, lastY); dCtx.lineTo(c.x, c.y); dCtx.stroke(); dCtx.restore();
+            lastX = c.x; lastY = c.y; compositeAndRenderFinalScreen();
+        }
+
+        function stopDrawing() {
+            if (isDraggingPart) { isDraggingPart = false; dragTargetPartRef = null; captureHistoryStateSnapshot(); return; }
+            if (!isDrawing) return; isDrawing = false; captureHistoryStateSnapshot();
+            if (currentMode === 'ai') openModal();
+        }
+
+        canvas.addEventListener('mousedown', startDrawing); canvas.addEventListener('mousemove', draw); canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); }, { passive: false });
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); }, { passive: false }); canvas.addEventListener('touchend', stopDrawing);
+
+        function compositeAndRenderFinalScreen() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#090d16'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            drawBackgroundGridSystem(ctx); ctx.drawImage(drawingCanvas, 0, 0);
+            if (globalCompositionParts.length === 0) return;
+            const cx = canvas.width / 2; const cy = canvas.height / 2;
+
+            const drawVectorPipeline = (isStroke, strokeColorHex) => {
+                globalCompositionParts.forEach(p => {
+                    if (hideOthersGlobally && p.name !== currentFocusedPart) return;
+                    ctx.save(); const finalX = cx + (p.x * GRID_UNIT); const finalY = cy + (p.y * GRID_UNIT);
+                    ctx.translate(finalX, finalY); ctx.scale(p.flipX || 1, p.flipY || 1);
+                    const pX = (p.pivotX || 0) * GRID_UNIT; const pY = (p.pivotY || 0) * GRID_UNIT;
+                    ctx.translate(pX, pY); if (p.shape !== 'circle' && p.rot !== 0) ctx.rotate(p.rot * Math.PI / 180);
+                    ctx.translate(-pX, -pY);
+                    const r = GRID_UNIT * (p.scale * 6); ctx.beginPath();
+                    if (p.shape === 'circle') ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
+                    else if (p.shape === 'rect') ctx.rect(-r * 0.5, -r * 0.4, r, r * 0.8);
+                    else if (p.shape === 'triangle') { ctx.moveTo(0, -r * 0.5); ctx.lineTo(-r * 0.5, r * 0.4); ctx.lineTo(r * 0.5, r * 0.4); }
+                    else if (p.shape === 'rhombus') { ctx.moveTo(0, -r * 0.5); ctx.lineTo(r * 0.5, 0); ctx.lineTo(0, r * 0.5); ctx.lineTo(-r * 0.5, 0); }
+                    else if (p.shape === 'star') {
+                        for (let i = 0; i < 5; i++) {
+                            ctx.lineTo(Math.cos((18 + i * 72) * Math.PI / 180) * r * 0.6, -Math.sin((18 + i * 72) * Math.PI / 180) * r * 0.6);
+                            ctx.lineTo(Math.cos((54 + i * 72) * Math.PI / 180) * r * 0.25, -Math.sin((54 + i * 72) * Math.PI / 180) * r * 0.25);
+                        }
+                    }
+                    ctx.closePath();
+                    if (!isStroke) { ctx.fillStyle = coloredPartsState[p.name] || '#334155'; ctx.fill(); } 
+                    else {
+                        let isSnappedX = Math.abs(p.x - Math.round(p.x * 2) / 2) < 0.05;
+                        let isSnappedY = Math.abs(p.y - Math.round(p.y * 2) / 2) < 0.05;
+                        ctx.strokeStyle = (isSnappedX && isSnappedY && isGridSystemOn) ? '#2563eb' : ((p.name === currentFocusedPart) ? '#22d3ee' : strokeColorHex);
+                        ctx.lineWidth = (p.name === currentFocusedPart) ? 3.5 : 1.5; ctx.stroke();
+                        if (p.name === currentFocusedPart && p.shape !== 'circle') { ctx.fillStyle = '#34d399'; ctx.beginPath(); ctx.arc(pX, pY, 4, 0, Math.PI*2); ctx.fill(); }
+                    }
+                    ctx.restore();
+                });
+            };
+            drawVectorPipeline(false, null); drawVectorPipeline(true, '#ffffff');
+        }
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('btn-normal').className = "w-full py-1.5 rounded-lg font-bold text-xs bg-slate-700 text-slate-300 text-left pl-2.5";
+            document.getElementById('btn-fill-sketch').className = "w-full py-1 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300 text-left pl-2";
+            document.getElementById('btn-fill-vector').className = "w-full py-1 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300 text-left pl-2";
+            document.getElementById('btn-ai').className = "py-1.5 rounded-lg font-bold text-xs bg-slate-700 text-slate-300";
+            document.getElementById('btn-move-mode').className = "py-1.5 rounded-lg font-bold text-xs bg-slate-700 text-slate-300";
+
+            if (mode === 'normal') { document.getElementById('btn-normal').className = "w-full py-1.5 rounded-lg font-bold text-xs bg-purple-600 text-white text-left pl-2.5"; badgeMode.innerText = "자유 스케치 드로잉"; moveSubOptions.classList.add('hidden'); }
+            else if (mode === 'fill-sketch') { document.getElementById('btn-fill-sketch').className = "w-full py-1 rounded-md text-[10px] font-bold bg-cyan-600 text-white text-left pl-2"; badgeMode.innerText = "🪣 선 내부 채우기"; moveSubOptions.classList.add('hidden'); }
+            else if (mode === 'fill-vector') { document.getElementById('btn-fill-vector').className = "w-full py-1 rounded-md text-[10px] font-bold bg-teal-600 text-white text-left pl-2"; badgeMode.innerText = "📐 벡터 파츠 컬러링"; moveSubOptions.classList.add('hidden'); }
+            else if (mode === 'ai') { document.getElementById('btn-ai').className = "py-1.5 rounded-lg font-bold text-xs bg-gradient-to-r from-purple-600 to-indigo-600 text-white"; badgeMode.innerText = "AI 패턴 매칭"; moveSubOptions.classList.add('hidden'); openModal(); }
+            else if (mode === 'move') { document.getElementById('btn-move-mode').className = "py-1.5 rounded-lg font-bold text-xs bg-blue-600 text-white"; moveSubOptions.classList.remove('hidden'); setMoveMethod(moveMethod); }
+        }
+
+        function setMoveMethod(method) {
+            moveMethod = method;
+            if (method === 'panel') {
+                document.getElementById('btn-sub-panel').className = "py-0.5 text-[9px] font-bold rounded bg-cyan-600 text-white";
+                document.getElementById('btn-sub-drag').className = "py-0.5 text-[9px] font-bold rounded bg-slate-800 text-slate-400";
+                if (globalCompositionParts.length > 0 && currentFocusedPart) transformModal.classList.remove('hidden');
+            } else {
+                document.getElementById('btn-sub-panel').className = "py-0.5 text-[9px] font-bold rounded bg-slate-800 text-slate-400";
+                document.getElementById('btn-sub-drag').className = "py-0.5 text-[9px] font-bold rounded bg-purple-600 text-white";
+                transformModal.classList.add('hidden');
+            }
+        }
+
+        function setBrushColor(c) { isEraserMode = false; strokeColor = c; currentColorBadge.style.backgroundColor = c; updateEraserUI(); }
+        function changeBrushSizeDirect(v) { let s = Math.max(1, Math.min(150, parseInt(v) || 1)); if (isEraserMode) eraserBrushSize = s; else normalBrushSize = s; }
+        
+        function toggleEraserMode() {
+            isEraserMode = !isEraserMode; const btn = document.getElementById('btn-eraser');
+            if (isEraserMode) { btn.innerText = "🧼 지우개 작동 중"; btn.className = "w-full py-1 bg-emerald-600 text-white rounded-lg font-bold text-xs"; } 
+            else { btn.innerText = "🧼 지우개 비활성화"; btn.className = "w-full py-1 bg-slate-700 text-slate-300 rounded-lg font-bold text-xs"; }
+            updateEraserUI();
+        }
+
+        function updateEraserUI() {
+            const lbl = document.getElementById('brush-label-text'); const inp = document.getElementById('brush-size-input');
+            if (isEraserMode) { lbl.innerText = "🧼 지우개 두께"; inp.value = eraserBrushSize; } else { lbl.innerText = "🖌️ 붓 두께"; inp.value = normalBrushSize; }
+        }
+
+        function clearCanvas() {
+            undoStack = []; redoStack = []; globalCompositionParts = []; coloredPartsState = {}; currentFocusedPart = null; templatePlacementOffsetCount = 0;
+            customControlBox.classList.add('hidden'); transformModal.classList.add('hidden'); customPartModal.classList.add('hidden'); moveSubOptions.classList.add('hidden');
+            btnLeftTransform.disabled = true; btnLeftTransform.className = "w-full py-1.5 bg-slate-700 text-slate-500 rounded-lg font-bold text-[11px] cursor-not-allowed";
+            partsContainer.innerHTML = '<span class="text-[10px] text-slate-500 italic">도안 레이어가 로드되면 제어기가 빌드됩니다.</span>';
+            dCtx.clearRect(0,0,drawingCanvas.width,drawingCanvas.height); setMode('normal'); captureHistoryStateSnapshot(); compositeAndRenderFinalScreen();
+        }
+
+        function openModal() { aiModal.classList.remove('opacity-0', 'pointer-events-none'); }
+        function closeModal() { aiModal.classList.add('opacity-0', 'pointer-events-none'); setMode('normal'); }
+        function processAI() { closeModal(); scanBar.style.display = 'block'; setTimeout(() => { scanBar.style.display = 'none'; appendTemplateLayer(DRAWING_TEMPLATES[aiTemplateCycleIndex]); aiTemplateCycleIndex = (aiTemplateCycleIndex + 1) % DRAWING_TEMPLATES.length; setMode('normal'); }, 1200); }
+
+        function buildPartsController() {
+            partsContainer.innerHTML = '';
+            globalCompositionParts.forEach(p => {
+                const wrapper = document.createElement('div'); wrapper.className = "relative flex items-center bg-slate-800 rounded-lg px-2 py-0.5 border border-slate-700";
+                const isFocused = currentFocusedPart === p.name;
+                const btn = document.createElement('button'); btn.className = `text-[10px] font-bold py-0.5 transition ${isFocused ? 'text-cyan-400 font-extrabold' : 'text-slate-300'}`;
+                btn.innerText = p.name;
+                btn.onclick = () => { currentFocusedPart = p.name; buildPartsController(); updateActionButtonsState(); if (moveMethod === 'panel' && currentMode === 'move') transformModal.classList.remove('hidden'); syncTransformPanelData(); compositeAndRenderFinalScreen(); };
+                const pBtn = document.createElement('button'); pBtn.className = "ml-1.5 text-slate-400 hover:text-white text-[9px]"; pBtn.innerHTML = `<i class="fa-solid fa-fill-drip"></i>`;
+                pBtn.onclick = (e) => { e.stopPropagation(); currentFocusedPart = p.name; openColorSelectorModal(p.name); };
+                wrapper.appendChild(btn); wrapper.appendChild(pBtn); partsContainer.appendChild(wrapper);
+            });
+        }
+
+        function deleteSelectedPart() {
+            if (!currentFocusedPart) return; globalCompositionParts = globalCompositionParts.filter(p => p.name !== currentFocusedPart); delete coloredPartsState[currentFocusedPart];
+            currentFocusedPart = globalCompositionParts.length > 0 ? globalCompositionParts[0].name : null;
+            if (globalCompositionParts.length === 0) { customControlBox.classList.add('hidden'); transformModal.classList.add('hidden'); templatePlacementOffsetCount = 0; }
+            captureHistoryStateSnapshot(); buildPartsController(); updateActionButtonsState(); syncTransformPanelData(); compositeAndRenderFinalScreen();
+        }
+
+        function updateActionButtonsState() {
+            if (currentFocusedPart) { btnDeletePart.disabled = false; btnLeftTransform.disabled = false; btnLeftTransform.className = "w-full py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-bold text-[11px] shadow-md cursor-pointer"; } 
+            else { btnDeletePart.disabled = true; btnLeftTransform.disabled = true; btnLeftTransform.className = "w-full py-1.5 bg-slate-700 text-slate-500 rounded-lg font-bold text-[11px] cursor-not-allowed"; }
+        }
+
+        function toggleTransformPanel() { if (currentFocusedPart) transformModal.classList.contains('hidden') ? (syncTransformPanelData(), transformModal.classList.remove('hidden')) : transformModal.classList.add('hidden'); }
+        function closeTransformModal() { transformModal.classList.add('hidden'); }
+        function toggleCustomPartPanel() { customPartModal.classList.contains('hidden') ? customPartModal.classList.remove('hidden') : customPartModal.classList.add('hidden'); }
+        function closeCustomPartModal() { customPartModal.classList.add('hidden'); }
+
+        function submitCustomPartAI() {
+            const shape = customShapeType.value; const rName = customPartInputName.value.trim(); if (!rName) return;
+            const combined = `${rName} (#${Date.now().toString().slice(-3)})`;
+            globalCompositionParts.push({ name: combined, shape: shape, x: 0, y: 0, rot: 0, scale: 0.6, pivotX: 0, pivotY: 0, flipX: 1, flipY: 1 });
+            coloredPartsState[combined] = '#06b6d4'; currentFocusedPart = combined; customPartModal.classList.add('hidden');
+            captureHistoryStateSnapshot(); buildPartsController(); updateActionButtonsState(); syncTransformPanelData(); compositeAndRenderFinalScreen();
+        }
+
+        function syncTransformPanelData() {
+            if (!currentFocusedPart) return; const p = globalCompositionParts.find(x => x.name === currentFocusedPart); if (!p) return;
+            tfPartNameDisplay.innerText = p.name; tfHideOthersCheckbox.checked = hideOthersGlobally;
+            if (p.shape === 'circle') { tfCircleWarning.classList.remove('hidden'); tfRotationSection.classList.add('opacity-25','pointer-events-none'); tfPivotSection.classList.add('opacity-25','pointer-events-none'); }
+            else { tfCircleWarning.classList.add('hidden'); tfRotationSection.classList.remove('opacity-25','pointer-events-none'); tfPivotSection.classList.remove('opacity-25','pointer-events-none'); }
+            tfMoveX.value = p.x; tfMoveY.value = p.y; tfPivotX.value = p.pivotX || 0; tfPivotY.value = p.pivotY || 0; tfRotateDeg.value = p.rot || 0;
+        }
+
+        function toggleHideOthers(c) { hideOthersGlobally = c; compositeAndRenderFinalScreen(); }
+        function applyFlipEngine(axis) { const p = globalCompositionParts.find(x => x.name === currentFocusedPart); if (!p) return; if (axis==='horizontal') p.flipX=(p.flipX||1)*-1; else p.flipY=(p.flipY||1)*-1; captureHistoryStateSnapshot(); compositeAndRenderFinalScreen(); }
+        function liveUpdateTransform() { const p = globalCompositionParts.find(x => x.name === currentFocusedPart); if (!p) return; p.x=parseFloat(tfMoveX.value)||0; p.y=parseFloat(tfMoveY.value)||0; if (p.shape!=='circle') { p.pivotX=parseFloat(tfPivotX.value)||0; p.pivotY=parseFloat(tfPivotY.value)||0; p.rot=parseFloat(tfRotateDeg.value)||0; } compositeAndRenderFinalScreen(); }
+
+        function openColorSelectorModal(partName) {
+            modalPartName.innerText = `[${partName}]`; modalColorGrid.innerHTML = '';
+            COLOR_POOL.forEach(color => {
+                const colorBtn = document.createElement('button'); colorBtn.className = "w-8 h-8 rounded-xl border border-slate-700 transition transform hover:scale-110";
+                colorBtn.style.backgroundColor = color; colorBtn.onclick = () => { coloredPartsState[partName] = color; captureHistoryStateSnapshot(); compositeAndRenderFinalScreen(); buildPartsController(); colorModal.classList.add('hidden'); };
+                modalColorGrid.appendChild(colorBtn);
+            });
+            colorModal.classList.remove('hidden');
+        }
+        function closeColorModal() { colorModal.classList.add('hidden'); }
+
+        function saveCanvasAsImageFile() {
+            try {
+                const downloadLink = document.createElement('a'); downloadLink.href = canvas.toDataURL('image/png');
+                downloadLink.download = `magic_vector_studio_${Date.now().toString().slice(-6)}.png`;
+                document.body.appendChild(downloadLink); downloadLink.click(); document.body.removeChild(downloadLink);
+                statusText.innerText = "💾 초고해상도 광활 이미지 통합 저장을 완료했습니다!";
+            } catch (error) { alert("⚠️ 저장 실패 정책 확인"); }
+        }
+
+        function makePanelDraggable(el) {
+            const header = el.querySelector('.panel-header');
+            let active = false; let currentX; let currentY; let initialX; let initialY; let xOffset = 0; let yOffset = 0;
+            header.addEventListener('mousedown', dragStart); document.addEventListener('mousemove', drag); document.addEventListener('mouseup', dragEnd);
+            header.addEventListener('touchstart', dragStart, {passive: false}); document.addEventListener('touchmove', drag, {passive: false}); document.addEventListener('touchend', dragEnd);
+            function dragStart(e) {
+                if (e.type === 'touchstart') { initialX = e.touches[0].clientX - xOffset; initialY = e.touches[0].clientY - yOffset; } else { initialX = e.clientX - xOffset; initialY = e.clientY - yOffset; }
+                if (e.target === header || header.contains(e.target)) active = true;
+            }
+            function drag(e) { if (!active) return; e.preventDefault(); if (e.type === 'touchmove') { currentX = e.touches[0].clientX - initialX; currentY = e.touches[0].clientY - initialY; } else { currentX = e.clientX - initialX; currentY = e.clientY - initialY; } xOffset = currentX; yOffset = currentY; el.style.transform = `translate(${currentX}px, ${currentY}px)`; }
+            function dragEnd() { active = false; }
+        }
+
+        window.addEventListener('load', () => { resizeCanvas(); renderPaletteChips(); renderTemplateButtons(); window.addEventListener('resize', resizeCanvas); makePanelDraggable(transformModal); makePanelDraggable(customPartModal); });
+    </script>
+</body>
+</html>
